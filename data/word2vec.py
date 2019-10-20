@@ -19,10 +19,17 @@ def main(vocab_file):
 
     GloVe_vectors = GloVe(name='6B', dim=cfg.EMBEDDING_SIZE)
 
-    embeddings = torch.Tensor(cfg.VOCAB_SIZE + 2, 100)
+    embeddings = torch.Tensor(cfg.VOCAB_SIZE + 3, 100)
     word2idx, idx2word = {}, {}
+
     word2idx[cfg.SENTENCE_START] = cfg.VOCAB_SIZE
     word2idx[cfg.SENTENCE_END] = cfg.VOCAB_SIZE + 1
+    word2idx[cfg.UNKNOWN] = cfg.VOCAB_SIZE + 2
+
+    idx2word[cfg.VOCAB_SIZE] = cfg.SENTENCE_START
+    idx2word[cfg.VOCAB_SIZE + 1] = cfg.SENTENCE_END
+    idx2word[cfg.VOCAB_SIZE + 2] = cfg.UNKNOWN
+
 
     with open(vocab_file, 'r') as reader:
 
@@ -35,10 +42,11 @@ def main(vocab_file):
             idx2word[i] = token
 
     # Start and end tokens
-    embeddings[-2] = torch.cat((torch.zeros(cfg.EMBEDDING_SIZE // 2),
+    embeddings[-3] = torch.cat((torch.zeros(cfg.EMBEDDING_SIZE // 2),
                                 torch.ones(cfg.EMBEDDING_SIZE // 2)), 0)
-    embeddings[-1] = torch.cat((torch.ones(cfg.EMBEDDING_SIZE // 2),
+    embeddings[-2] = torch.cat((torch.ones(cfg.EMBEDDING_SIZE // 2),
                                 torch.zeros(cfg.EMBEDDING_SIZE // 2)), 0)
+    embeddings[-1] = torch.zeros(cfg.EMBEDDING_SIZE)
 
     torch.save(embeddings, 'GloVe_embeddings.pt')
     word2idx = json.dumps(word2idx)
