@@ -60,6 +60,8 @@ class SummarizationDataset(Dataset):
 
         data = self.data[idx]
         target = self.target[idx]
+        data = [cfg.SENTENCE_START] + data + [cfg.SENTENCE_END]
+        target = [cfg.SENTENCE_START] + target + [cfg.SENTENCE_END]
 
         input_emb = torch.zeros((len(data), cfg.EMBEDDING_SIZE))
 
@@ -112,6 +114,7 @@ if __name__ == "__main__":
 
     for i in range(len(dataset)):
         input_emb, target_idx = dataset[i]
+        pdb.set_trace()
         tokens = output2tokens(target_idx, idx2word)
         print(tokens)
         pdb.set_trace()
