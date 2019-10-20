@@ -1,9 +1,9 @@
 ## Downloading the preprocessed dataset
-
 ```
-cd data/
-wget https://drive.google.com/open?id=1WyEOyG-tj5vJhNvgRT6Cb_feKdej45HC
-mv open\?id\=1WyEOyG-tj5vJhNvgRT6Cb_feKdej45HC finished.zip
+cd data\
+```
+Download pre-processed file [here](https://drive.google.com/open?id=1WyEOyG-tj5vJhNvgRT6Cb_feKdej45HC)
+```
 unzip finished.zip
 ```
 
