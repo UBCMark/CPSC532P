@@ -9,7 +9,7 @@ class SummarizationDataset(Dataset):
     '''
     Dataset for loading articles and target summary
     '''
-    def __init__(self, txt_path, emb_path, map_path):
+    def __init__(self, txt_path, map_path):
         """
         txt_path: path to txt file
         emb_path: path to word2vec embeddings
@@ -18,8 +18,8 @@ class SummarizationDataset(Dataset):
 
         if not os.path.isfile(txt_path):
             raise Exception("Data file not found at location \"{}\".".format(txt_path))
-        if not os.path.isfile(emb_path):
-            raise Exception("Embedding file not found at location \"{}\".".format(emb_path))
+        # if not os.path.isfile(emb_path):
+        #     raise Exception("Embedding file not found at location \"{}\".".format(emb_path))
         if not os.path.isfile(map_path):
             raise Exception("JSON mapping file not found at location \"{}\".".format(map_path))
 
@@ -43,10 +43,10 @@ class SummarizationDataset(Dataset):
         if not len(self.data) == len(self.target):
             raise Exception("JSON mapping file not found at location \"{}\".".format(map_path))
 
-        self.emb = torch.load(emb_path)
+        # self.emb = torch.load(emb_path)
 
-        if not self.emb.size() == torch.Size([cfg.VOCAB_SIZE + 2, cfg.EMBEDDING_SIZE]):
-            raise Exception("Embeddings do not have the correct shape.")
+        # if not self.emb.size() == torch.Size([cfg.VOCAB_SIZE + 2, cfg.EMBEDDING_SIZE]):
+        #     raise Exception("Embeddings do not have the correct shape.")
 
         with open(map_path, 'r') as json_file:
             self.map = json.load(json_file)
@@ -63,25 +63,39 @@ class SummarizationDataset(Dataset):
         data = [cfg.SENTENCE_START] + data + [cfg.SENTENCE_END]
         target = [cfg.SENTENCE_START] + target + [cfg.SENTENCE_END]
 
-        input_emb = torch.zeros((len(data), cfg.EMBEDDING_SIZE))
+        # input_emb = torch.zeros((len(data), cfg.EMBEDDING_SIZE))
 
-        word_indices = []
-        for token in data:
-            if token in self.map.keys():
-                word_indices.append(self.map[token])
-            else:
-                word_indices.append(-1)
+        # word_indices = []
+        # for token in data:
+        #     if token in self.map.keys():
+        #         word_indices.append(self.map[token])
+        #     else:
+        #         word_indices.append(-1)
 
-        for i, word_idx in enumerate(word_indices):
-            if word_idx != -1:
-                input_emb[i] = self.emb[word_idx]
+        # for i, word_idx in enumerate(word_indices):
+        #     if word_idx != -1:
+        #         input_emb[i] = self.emb[word_idx]
 
-        target_idx = torch.zeros((len(target), cfg.VOCAB_SIZE + 2))
+        input_idx = torch.zeros(len(data), dtype=torch.long)
+        for i, token in enumerate(data):
+            try:
+                input_idx[i] = self.map[token]
 
+            # Out of vocab
+            except:
+                input_idx[i] = self.map[cfg.UNKNOWN]
+
+
+        target_idx = torch.zeros(len(target), dtype=torch.long)
         for i, token in enumerate(target):
-            target_idx[i, self.map[token]] = 1
+            try:
+                target_idx[i] = self.map[token]
 
-        return input_emb, target_idx
+            # Out of vocab
+            except:
+                target_idx[i] = self.map[cfg.UNKNOWN]
+
+        return input_idx, target_idx
 
 
 def output2tokens(index, idx2word):
@@ -92,8 +106,8 @@ def output2tokens(index, idx2word):
     tokens = []
 
     for i in range(index.size()[0]):
-        _, idx = index[i].max(0)
-        tokens.append(idx2word[str(idx.item())])
+        idx = index[i].item()
+        tokens.append(idx2word[str(idx)])
 
     return tokens
 
@@ -108,13 +122,14 @@ if __name__ == "__main__":
         idx2word = json.load(json_file)
 
     
-    dataset = SummarizationDataset(os.path.join('finished', 'val.txt'),
-                                   'GloVe_embeddings.pt',
-                                   'word2idx.json')
+    dataset = SummarizationDataset(os.path.join('finished', 'val.txt'), 'word2idx.json')
 
-    for i in range(len(dataset)):
-        input_emb, target_idx = dataset[i]
-        pdb.set_trace()
-        tokens = output2tokens(target_idx, idx2word)
-        print(tokens)
-        pdb.set_trace()
+    # for i in range(len(dataset)):
+    #     data, target = dataset[i]
+    #     pdb.set_trace()
+    #     tokens = output2tokens(data, idx2word)
+
+    dataloader = get_dataloader(dataset)
+
+    # for i, (data, target) in enumerate(dataloader):
+    #     pdb.set_trace()
