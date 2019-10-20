@@ -1,10 +1,19 @@
 import torch
+import torch.nn as nn
+from torch import optim
+from data.dataset import SummarizationDataset
+from data.dataset import get_dataloader
+from models.AttnDecoderRNN import AttnDecoderRNN
+from models.EncoderRNN import EncoderRNN
+import time
+import math
+
 
 MAX_LENGTH = 1000
 
 
 def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=MAX_LENGTH):
-    encoder_hidden = encoder.initHidden()
+    encoder_hidden = encoder.initHidden(device)
 
     encoder_optimizer.zero_grad()
     decoder_optimizer.zero_grad()
@@ -17,8 +26,10 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
     loss = 0
 
     for ei in range(input_length):
+        print(input_tensor[ei].shape)
+        print(encoder_hidden.shape)
         encoder_output, encoder_hidden = encoder(
-            input_tensor[ei], encoder_hidden)
+            input_tensor[ei].to(device), encoder_hidden)
         encoder_outputs[ei] = encoder_output[0, 0]
 
     decoder_input = torch.tensor([[SOS_token]], device=device)
@@ -63,15 +74,14 @@ def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, lear
 
     encoder_optimizer = optim.SGD(encoder.parameters(), lr=learning_rate)
     decoder_optimizer = optim.SGD(decoder.parameters(), lr=learning_rate)
-    training_pairs = [tensorsFromPair(random.choice(pairs))
-                      for i in range(n_iters)]
+    dataloader = get_dataloader(SummarizationDataset("data/finished/train.txt", "data/word2idx.json"))
+
     criterion = nn.NLLLoss()
 
-    for iter in range(1, n_iters + 1):
-        training_pair = training_pairs[iter - 1]
-        input_tensor = training_pair[0]
-        target_tensor = training_pair[1]
-
+    for i, batch in enumerate(dataloader):
+        input_tensor = batch[0]
+        target_tensor = batch[1]
+        print(input_tensor)
         loss = train(input_tensor, target_tensor, encoder,
                      decoder, encoder_optimizer, decoder_optimizer, criterion)
         print_loss_total += loss
@@ -92,6 +102,10 @@ def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, lear
 
 
 if __name__ == "__main__":
+    device = torch.device('cuda:1')
     hidden_size = 256
-    encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
-    attn_decoder1 = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1).to(device)
+    weights = torch.load("data/GloVe_embeddings.pt")
+    encoder1 = EncoderRNN(weights, hidden_size, 2, dropout_p=0.1).to(device)
+    attn_decoder1 = AttnDecoderRNN(weights, hidden_size, 200003, dropout_p=0.1).to(device)
+
+    trainIters(encoder1, attn_decoder1, 75000, print_every=10)

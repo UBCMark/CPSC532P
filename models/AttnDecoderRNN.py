@@ -1,5 +1,7 @@
 import torch
+import torch.nn as nn
 
+MAX_LENGTH = 1000
 
 class DecoderRNN(nn.Module):
     def __init__(self, hidden_size, output_size):
@@ -23,14 +25,15 @@ class DecoderRNN(nn.Module):
 
 
 class AttnDecoderRNN(nn.Module):
-    def __init__(self, hidden_size, output_size, dropout_p=0.1, max_length=MAX_LENGTH):
+    def __init__(self, weights, hidden_size, output_size, dropout_p=0.1, max_length=MAX_LENGTH):
         super(AttnDecoderRNN, self).__init__()
         self.hidden_size = hidden_size
         self.output_size = output_size
         self.dropout_p = dropout_p
         self.max_length = max_length
 
-        self.embedding = nn.Embedding(self.output_size, self.hidden_size)
+        # self.embedding = nn.Embedding(self.output_size, self.hidden_size)
+        self.embedding = nn.Embedding.from_pretrained(weights)
         self.attn = nn.Linear(self.hidden_size * 2, self.max_length)
         self.attn_combine = nn.Linear(self.hidden_size * 2, self.hidden_size)
         self.dropout = nn.Dropout(self.dropout_p)
