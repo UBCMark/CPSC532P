@@ -35,6 +35,12 @@ class SummarizationDataset(Dataset):
                     self.data.append(tokens)
                 elif i % 2 == 1:
                     self.target.append(tokens)
+
+        over_limit = set([i for i in range(len(self.data)) if len(self.data[i]) > cfg.INPUT_MAX] + \
+                         [i for i in range(len(self.target)) if len(self.target[i]) > cfg.OUTPUT_MAX])
+        self.data = [x for i, x in enumerate(self.data) if i not in over_limit]
+        self.target = [x for i, x in enumerate(self.target) if i not in over_limit]
+        
         print("Finished loading txt file.")
 
         if not len(self.data) == len(self.target):
