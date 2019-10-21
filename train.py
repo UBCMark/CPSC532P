@@ -8,12 +8,14 @@ from models.EncoderRNN import EncoderRNN
 from data import cfg
 import os, sys, time, math, random
 import pdb
+from utils.model_saver_iter import load_model, save_model
 
 MAX_LENGTH = 1000
 teacher_forcing_ratio = 0.5
 
 
-def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=MAX_LENGTH):
+def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion,
+          max_length=MAX_LENGTH):
     encoder_hidden = encoder.initHidden(device)
 
     encoder_optimizer.zero_grad()
@@ -27,7 +29,7 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
     loss = 0
     for ei in range(input_length):
         encoder_output, encoder_hidden = encoder(input_tensor[ei], encoder_hidden)
-        
+
         try:
             encoder_outputs[ei] = encoder_output[0, 0]
         except:
@@ -67,7 +69,8 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
     return loss.item() / target_length
 
 
-def trainIters(encoder, decoder, n_iters, checkpoint_dir, print_every=1000, plot_every=100, learning_rate=0.01):
+def trainIters(encoder, decoder, n_iters, checkpoint_dir, print_every=1000, plot_every=100, learning_rate=0.01,
+               save_every=1000):
     start = time.time()
     plot_losses = []
     print_loss_total = 0  # Reset every print_every
@@ -78,32 +81,48 @@ def trainIters(encoder, decoder, n_iters, checkpoint_dir, print_every=1000, plot
     dataloader = get_dataloader(SummarizationDataset("data/finished/train.txt", "data/word2idx.json"))
 
     criterion = nn.NLLLoss()
+    start_iter = load_model(encoder, model_dir=checkpoint_dir, appendix='Encoder', iter="l")
+    start_iter_ = load_model(decoder, model_dir=checkpoint_dir, appendix='Decoder', iter="l")
+    assert start_iter == start_iter_
 
-    for iter, batch in enumerate(dataloader):
-        input_tensor = batch[0][0].to(device)
-        target_tensor = batch[1][0].to(device)
+    data_iter = iter(dataloader)
 
-        loss = train(input_tensor, target_tensor, encoder,
-                     decoder, encoder_optimizer, decoder_optimizer, criterion)
-        print_loss_total += loss
-        plot_loss_total += loss
+    if start_iter < n_iters:
 
+        for i in range(start_iter, n_iters):
+            try:
+                batch = next(data_iter)
+            except:
+                data_iter = iter(data_loader)
+                batch = next(data_iter)
 
-        if iter % print_every == 0:
-            print_loss_avg = print_loss_total / print_every
-            print_loss_total = 0
-            print('(%d %d%%) %.4f' % (iter, iter / n_iters * 100, print_loss_avg))
+            input_tensor = batch[0][0].to(device)
+            target_tensor = batch[1][0].to(device)
 
-        if iter % plot_every == 0:
-            plot_loss_avg = plot_loss_total / plot_every
-            plot_losses.append(plot_loss_avg)
-            plot_loss_total = 0
+            loss = train(input_tensor, target_tensor, encoder,
+                         decoder, encoder_optimizer, decoder_optimizer, criterion)
+            print_loss_total += loss
+            plot_loss_total += loss
 
-        # Save checkpoint
-        torch.save(encoder.state_dict(), os.path.join(checkpoint_dir, "encoder_{}.pth".format(iter)))
-        torch.save(decoder.state_dict(), os.path.join(checkpoint_dir, "decoder_{}.pth".format(iter)))
+            if i % print_every == 0:
+                print_loss_avg = print_loss_total / print_every
+                print_loss_total = 0
+                print('(%d %d%%) %.4f' % (i, i / n_iters * 100, print_loss_avg))
 
-    # showPlot(plot_losses)
+            if i % plot_every == 0:
+                plot_loss_avg = plot_loss_total / plot_every
+                plot_losses.append(plot_loss_avg)
+                plot_loss_total = 0
+
+            # Save checkpoint
+            # torch.save(encoder.state_dict(), os.path.join(checkpoint_dir, "encoder_{}.pth".format(iter)))
+            # torch.save(decoder.state_dict(), os.path.join(checkpoint_dir, "decoder_{}.pth".format(iter)))
+            if (i + 1) % save_every == 0:
+                save_model(encoder, model_dir=checkpoint_dir, appendix="Encoder", iter=i + 1, save_num=3,
+                           save_step=save_every)
+                save_model(decoder, model_dir=checkpoint_dir, appendix="Decoder", iter=i + 1, save_num=3,
+                           save_step=save_every)
+        # showPlot(plot_losses)
 
 
 if __name__ == "__main__":
@@ -120,4 +139,4 @@ if __name__ == "__main__":
 
     if not os.path.exists(checkpoint_dir): os.makedirs(checkpoint_dir)
 
-    trainIters(encoder1, attn_decoder1, 75000, checkpoint_dir, print_every=10)
+    trainIters(encoder1, attn_decoder1, 10000, checkpoint_dir, print_every=10, save_every=100)
