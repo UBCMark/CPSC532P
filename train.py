@@ -5,6 +5,7 @@ from data.dataset import SummarizationDataset
 from data.dataset import get_dataloader
 from models.AttnDecoderRNN import AttnDecoderRNN
 from models.EncoderRNN import EncoderRNN
+from data import cfg
 import time
 import math
 
@@ -24,10 +25,7 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
     encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
 
     loss = 0
-
     for ei in range(input_length):
-        print(input_tensor[ei].shape)
-        print(encoder_hidden.shape)
         encoder_output, encoder_hidden = encoder(
             input_tensor[ei].to(device), encoder_hidden)
         encoder_outputs[ei] = encoder_output[0, 0]
@@ -79,9 +77,10 @@ def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, lear
     criterion = nn.NLLLoss()
 
     for i, batch in enumerate(dataloader):
-        input_tensor = batch[0]
-        target_tensor = batch[1]
+        input_tensor = batch[0][0]
+        target_tensor = batch[1][0]
         print(input_tensor)
+        print(target_tensor)
         loss = train(input_tensor, target_tensor, encoder,
                      decoder, encoder_optimizer, decoder_optimizer, criterion)
         print_loss_total += loss
@@ -105,7 +104,7 @@ if __name__ == "__main__":
     device = torch.device('cuda:1')
     hidden_size = 256
     weights = torch.load("data/GloVe_embeddings.pt")
-    encoder1 = EncoderRNN(weights, hidden_size, 2, dropout_p=0.1).to(device)
-    attn_decoder1 = AttnDecoderRNN(weights, hidden_size, 200003, dropout_p=0.1).to(device)
+    encoder1 = EncoderRNN(weights, cfg.EMBEDDING_SIZE, cfg.HIDDEN_SIZE, 2, dropout_p=0.1).to(device)
+    attn_decoder1 = AttnDecoderRNN(weights, cfg.HIDDEN_SIZE, 200003, dropout_p=0.1).to(device)
 
     trainIters(encoder1, attn_decoder1, 75000, print_every=10)
