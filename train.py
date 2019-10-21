@@ -101,10 +101,10 @@ def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, lear
 
 
 if __name__ == "__main__":
-    device = torch.device('cuda:1')
+    device = torch.device('cuda:0')
     hidden_size = 256
     weights = torch.load("data/GloVe_embeddings.pt")
     encoder1 = EncoderRNN(weights, cfg.EMBEDDING_SIZE, cfg.HIDDEN_SIZE, 2, dropout_p=0.1).to(device)
-    attn_decoder1 = AttnDecoderRNN(weights, cfg.HIDDEN_SIZE, 200003, dropout_p=0.1).to(device)
+    attn_decoder1 = AttnDecoderRNN(weights, cfg.HIDDEN_SIZE, 200003, 2, dropout_p=0.1).to(device)
 
     trainIters(encoder1, attn_decoder1, 75000, print_every=10)
