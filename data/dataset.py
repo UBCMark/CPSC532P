@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import Dataset, DataLoader
 import json, os
-import cfg
+from . import cfg
 import pdb
 
 
@@ -40,7 +40,7 @@ class SummarizationDataset(Dataset):
                          [i for i in range(len(self.target)) if len(self.target[i]) > cfg.OUTPUT_MAX])
         self.data = [x for i, x in enumerate(self.data) if i not in over_limit]
         self.target = [x for i, x in enumerate(self.target) if i not in over_limit]
-        
+
         print("Finished loading txt file.")
 
         if not len(self.data) == len(self.target):
@@ -67,7 +67,7 @@ class SummarizationDataset(Dataset):
         data = self.data[idx]
         target = self.target[idx]
         data = [cfg.SENTENCE_START] + data + [cfg.SENTENCE_END]
-        target = [cfg.SENTENCE_START] + target + [cfg.SENTENCE_END]
+        target = target + [cfg.SENTENCE_END]
 
         # input_emb = torch.zeros((len(data), cfg.EMBEDDING_SIZE))
 
