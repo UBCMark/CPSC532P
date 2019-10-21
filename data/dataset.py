@@ -118,7 +118,7 @@ def output2tokens(index, idx2word):
     return tokens
 
 def get_dataloader(dataset):
-    dataloader = DataLoader(dataset, shuffle=True, num_workers=1)
+    dataloader = DataLoader(dataset, shuffle=True)
     return dataloader
 
 # For testing

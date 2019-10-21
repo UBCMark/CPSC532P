@@ -9,9 +9,11 @@ from data import cfg
 import time
 import math
 import random
+import pdb
 
 MAX_LENGTH = 1000
 teacher_forcing_ratio = 0.5
+
 
 def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=MAX_LENGTH):
     encoder_hidden = encoder.initHidden(device)
@@ -27,7 +29,7 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
     loss = 0
     for ei in range(input_length):
         encoder_output, encoder_hidden = encoder(
-            input_tensor[ei].to(device), encoder_hidden)
+            input_tensor[ei], encoder_hidden)
         encoder_outputs[ei] = encoder_output[0, 0]
 
     decoder_input = torch.tensor([[20000]], device=device)
@@ -41,7 +43,7 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
         for di in range(target_length):
             decoder_output, decoder_hidden, decoder_attention = decoder(
                 decoder_input, decoder_hidden, encoder_outputs)
-            loss += criterion(decoder_output, target_tensor[di])
+            loss += criterion(decoder_output, target_tensor[di].view(-1))
             decoder_input = target_tensor[di]  # Teacher forcing
 
     else:
@@ -52,8 +54,8 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
             topv, topi = decoder_output.topk(1)
             decoder_input = topi.squeeze().detach()  # detach from history as input
 
-            loss += criterion(decoder_output, target_tensor[di])
-            if decoder_input.item() == EOS_token:
+            loss += criterion(decoder_output, target_tensor[di].view(-1))
+            if decoder_input.item() == 200001:
                 break
 
     loss.backward()
@@ -76,11 +78,10 @@ def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, lear
 
     criterion = nn.NLLLoss()
 
-    for i, batch in enumerate(dataloader):
-        input_tensor = batch[0][0]
-        target_tensor = batch[1][0]
-        print(input_tensor)
-        print(target_tensor)
+    for iter, batch in enumerate(dataloader):
+        input_tensor = batch[0][0].to(device)
+        target_tensor = batch[1][0].to(device)
+
         loss = train(input_tensor, target_tensor, encoder,
                      decoder, encoder_optimizer, decoder_optimizer, criterion)
         print_loss_total += loss
@@ -89,8 +90,7 @@ def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, lear
         if iter % print_every == 0:
             print_loss_avg = print_loss_total / print_every
             print_loss_total = 0
-            print('%s (%d %d%%) %.4f' % (timeSince(start, iter / n_iters),
-                                         iter, iter / n_iters * 100, print_loss_avg))
+            print('(%d %d%%) %.4f' % (iter, iter / n_iters * 100, print_loss_avg))
 
         if iter % plot_every == 0:
             plot_loss_avg = plot_loss_total / plot_every
@@ -101,7 +101,7 @@ def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, lear
 
 
 if __name__ == "__main__":
-    device = torch.device('cuda:0')
+    device = torch.device('cuda:1')
     hidden_size = 256
     weights = torch.load("data/GloVe_embeddings.pt")
     encoder1 = EncoderRNN(weights, cfg.EMBEDDING_SIZE, cfg.HIDDEN_SIZE, 2, dropout_p=0.1).to(device)
