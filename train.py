@@ -8,10 +8,10 @@ from models.EncoderRNN import EncoderRNN
 from data import cfg
 import time
 import math
-
+import random
 
 MAX_LENGTH = 1000
-
+teacher_forcing_ratio = 0.5
 
 def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=MAX_LENGTH):
     encoder_hidden = encoder.initHidden(device)
@@ -30,7 +30,7 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
             input_tensor[ei].to(device), encoder_hidden)
         encoder_outputs[ei] = encoder_output[0, 0]
 
-    decoder_input = torch.tensor([[SOS_token]], device=device)
+    decoder_input = torch.tensor([[20000]], device=device)
 
     decoder_hidden = encoder_hidden
 

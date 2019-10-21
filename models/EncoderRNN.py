@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-
+import pdb
 
 class EncoderRNN(nn.Module):
     def __init__(self, weights, emb_size, hidden_size, n_layers, dropout_p):
@@ -16,8 +16,9 @@ class EncoderRNN(nn.Module):
         output = embedded
         print(output.shape)
         print(hidden.shape)
+        # pdb.set_trace()
         output, hidden = self.gru(output, hidden)
         return output, hidden
 
     def initHidden(self, device):
-        return torch.zeros(1, 1, self.hidden_size, device=device)
+        return torch.zeros(self.n_layers, 1, self.hidden_size, device=device)
