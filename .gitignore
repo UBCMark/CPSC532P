@@ -1,1 +1,7 @@
 .ipynb_*
+*.pt
+*.pth
+**/__pycache__/
+*.json
+*.txt
+*.zip

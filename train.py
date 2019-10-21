@@ -6,9 +6,7 @@ from data.dataset import get_dataloader
 from models.AttnDecoderRNN import AttnDecoderRNN
 from models.EncoderRNN import EncoderRNN
 from data import cfg
-import time
-import math
-import random
+import os, sys, time, math, random
 import pdb
 
 MAX_LENGTH = 1000
@@ -28,9 +26,12 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
 
     loss = 0
     for ei in range(input_length):
-        encoder_output, encoder_hidden = encoder(
-            input_tensor[ei], encoder_hidden)
-        encoder_outputs[ei] = encoder_output[0, 0]
+        encoder_output, encoder_hidden = encoder(input_tensor[ei], encoder_hidden)
+        
+        try:
+            encoder_outputs[ei] = encoder_output[0, 0]
+        except:
+            pdb.set_trace()
 
     decoder_input = torch.tensor([[20000]], device=device)
 
@@ -66,7 +67,7 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
     return loss.item() / target_length
 
 
-def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, learning_rate=0.01):
+def trainIters(encoder, decoder, n_iters, checkpoint_dir, print_every=1000, plot_every=100, learning_rate=0.01):
     start = time.time()
     plot_losses = []
     print_loss_total = 0  # Reset every print_every
@@ -87,6 +88,7 @@ def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, lear
         print_loss_total += loss
         plot_loss_total += loss
 
+
         if iter % print_every == 0:
             print_loss_avg = print_loss_total / print_every
             print_loss_total = 0
@@ -97,14 +99,25 @@ def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, lear
             plot_losses.append(plot_loss_avg)
             plot_loss_total = 0
 
-    showPlot(plot_losses)
+        # Save checkpoint
+        torch.save(encoder.state_dict(), os.path.join(checkpoint_dir, "encoder_{}.pth".format(iter)))
+        torch.save(decoder.state_dict(), os.path.join(checkpoint_dir, "decoder_{}.pth".format(iter)))
+
+    # showPlot(plot_losses)
 
 
 if __name__ == "__main__":
-    device = torch.device('cuda:1')
+    if len(sys.argv) != 2:
+        print("USAGE: python train.py <checkpoint_dir>")
+        sys.exit()
+    checkpoint_dir = sys.argv[1]
+
+    device = torch.device('cuda:0')
     hidden_size = 256
     weights = torch.load("data/GloVe_embeddings.pt")
     encoder1 = EncoderRNN(weights, cfg.EMBEDDING_SIZE, cfg.HIDDEN_SIZE, 2, dropout_p=0.1).to(device)
     attn_decoder1 = AttnDecoderRNN(weights, cfg.HIDDEN_SIZE, 200003, 2, dropout_p=0.1).to(device)
 
-    trainIters(encoder1, attn_decoder1, 75000, print_every=10)
+    if not os.path.exists(checkpoint_dir): os.makedirs(checkpoint_dir)
+
+    trainIters(encoder1, attn_decoder1, 75000, checkpoint_dir, print_every=10)
