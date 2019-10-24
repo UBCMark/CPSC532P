@@ -5,6 +5,8 @@ import os, sys
 from data import cfg
 from models.EncoderRNN import EncoderRNN
 from models.AttnDecoderRNN import AttnDecoderRNN
+from models.AttnDecoderRNN_bi import AttnDecoderRNN as AttnDecoderRNN_bi
+from models.EncoderRNN_bi import EncoderRNN as EncoderRNN_bi
 from train import MAX_LENGTH
 from data.cfg import SENTENCE_START, SENTENCE_END
 from data.dataset import SummarizationDataset
@@ -63,7 +65,7 @@ def evaluate(encoder, decoder, input_tensor, max_length=MAX_LENGTH):
                 decoder_input, decoder_hidden, encoder_outputs)
             decoder_attentions[di] = decoder_attention.data
             topv, topi = decoder_output.data.topk(1)
-            if topi.item() == SENTENCE_END:
+            if index2word[str(topi.item())] == SENTENCE_END:
                 decoded_words.append(SENTENCE_END)
                 break
             else:
@@ -106,8 +108,14 @@ if __name__ == "__main__":
     checkpoint_dir = sys.argv[1]
     weights = torch.load("data/GloVe_embeddings.pt")
     device = torch.device('cpu')
-    encoder1 = EncoderRNN(weights, cfg.EMBEDDING_SIZE, cfg.HIDDEN_SIZE, 1, dropout_p=0).to(device)
-    attn_decoder1 = AttnDecoderRNN(weights, cfg.HIDDEN_SIZE, 200003, 1, dropout_p=0).to(device)
+    bi_enable = False
+    if bi_enable:
+        encoder1 = EncoderRNN_bi(weights, cfg.EMBEDDING_SIZE, cfg.HIDDEN_SIZE, 1, dropout_p=0.1).to(device)
+        attn_decoder1 = AttnDecoderRNN_bi(weights, 2 * cfg.HIDDEN_SIZE, 200003, 1, dropout_p=0.1).to(device)
+    else:
+        encoder1 = EncoderRNN(weights, cfg.EMBEDDING_SIZE, cfg.HIDDEN_SIZE, 2, dropout_p=0.1).to(device)
+        attn_decoder1 = AttnDecoderRNN(weights, cfg.HIDDEN_SIZE, 200003, 2, dropout_p=0.1).to(device)
+
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
     # extractTestSum() Only run once to extract reference summaries from test set
