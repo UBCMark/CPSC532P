@@ -7,18 +7,19 @@ from models.EncoderRNN import EncoderRNN
 from models.AttnDecoderRNN import AttnDecoderRNN
 from models.AttnDecoderRNN_bi import AttnDecoderRNN as AttnDecoderRNN_bi
 from models.EncoderRNN_bi import EncoderRNN as EncoderRNN_bi
-from train import MAX_LENGTH
 from data.cfg import SENTENCE_START, SENTENCE_END
 from data.dataset import SummarizationDataset
 from data.dataset import get_dataloader
+from train import MAX_LENGTH
 from utils.model_saver_iter import load_model, save_model
 
+Decoder_MAX_LENGTH = 100
 r = Rouge155()
-r.system_dir = 'evaluation/sys_folder/'
-r.model_dir = 'evaluation/model_folder/'
+system_dir = 'evaluation/sys_folder/'
+model_dir = 'evaluation/model_folder/'
 fname = 'summary'
-r.system_filename_pattern = fname + '.(\d+).txt'
-r.model_filename_pattern = fname + '.#ID#.txt'
+system_filename_pattern = fname + '.(\d+).txt'
+model_filename_pattern = fname + '.#ID#.txt'
 testfile = 'data/finished/test.txt'
 with open('data/idx2word.json') as json_file:
     index2word = json.load(json_file)
@@ -31,7 +32,7 @@ def extractTestSum():
         line = fileholder.readline()
         while line:
             outf = fname + '.' + str(i) + '.txt'
-            fmod = open(r.model_dir + outf, 'w+')
+            fmod = open(model_dir + outf, 'w+')
             fmod.write(line)
             fmod.close()
             line = fileholder.readline()
@@ -60,7 +61,7 @@ def evaluate(encoder, decoder, input_tensor, max_length=MAX_LENGTH):
         decoded_words = []
         decoder_attentions = torch.zeros(max_length, max_length)
 
-        for di in range(max_length):
+        for di in range(Decoder_MAX_LENGTH):
             decoder_output, decoder_hidden, decoder_attention = decoder(
                 decoder_input, decoder_hidden, encoder_outputs)
             decoder_attentions[di] = decoder_attention.data
@@ -95,7 +96,7 @@ def evaluateAll(encoder, decoder, checkpoint_dir, n_iters):
         output_words, _ = evaluate(encoder, decoder, input_tensor)
         output_sentence = ' '.join(output_words)
         outf = fname + '.' + str(i) + '.txt'
-        fmod = open(r.system_dir + outf, 'w+')
+        fmod = open(system_dir + outf, 'w+')
         fmod.write(output_sentence)
         fmod.close()
 
@@ -119,11 +120,18 @@ if __name__ == "__main__":
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
     # extractTestSum() Only run once to extract reference summaries from test set
-    if not os.path.exists(r.model_dir):
-        os.makedirs(r.model_dir)
+    if not os.path.exists(model_dir):
+        os.makedirs(model_dir)
         extractTestSum()
-    if not os.path.exists(r.system_dir):
-        os.makedirs(r.system_dir)
+    if not os.path.exists(system_dir):
+        os.makedirs(system_dir)
+
+    r = Rouge155()
+    r.system_dir = system_dir
+    r.model_dir = model_dir
+    r.system_filename_pattern = system_filename_pattern
+    r.model_filename_pattern = model_filename_pattern
+
     evaluateAll(encoder1, attn_decoder1, checkpoint_dir=checkpoint_dir, n_iters=11490)
     output = r.convert_and_evaluate()
     print(output)
