@@ -94,7 +94,7 @@ def trainIters(encoder, decoder, n_iters, checkpoint_dir, print_every=1000, plot
             try:
                 batch = next(data_iter)
             except:
-                data_iter = iter(data_loader)
+                data_iter = iter(dataloader)
                 batch = next(data_iter)
 
             input_tensor = batch[0][0].to(device)

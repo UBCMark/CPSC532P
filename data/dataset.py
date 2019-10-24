@@ -57,12 +57,10 @@ class SummarizationDataset(Dataset):
         with open(map_path, 'r') as json_file:
             self.map = json.load(json_file)
 
-
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
-
 
         data = self.data[idx]
         target = self.target[idx]

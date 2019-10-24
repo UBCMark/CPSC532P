@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import pdb
 
+
 class EncoderRNN(nn.Module):
     def __init__(self, weights, emb_size, hidden_size, n_layers, dropout_p):
         super(EncoderRNN, self).__init__()
