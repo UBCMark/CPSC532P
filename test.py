@@ -1,11 +1,48 @@
+from pyrouge import Rouge155
 import torch
+import json
+import os, sys
+from data import cfg
+from models.EncoderRNN import EncoderRNN
+from models.AttnDecoderRNN import AttnDecoderRNN
+from train import MAX_LENGTH
+from data.cfg import SENTENCE_START, SENTENCE_END
+from data.dataset import SummarizationDataset
+from data.dataset import get_dataloader
+from utils.model_saver_iter import load_model, save_model
+
+r = Rouge155()
+r.system_dir = 'evaluation/sys_folder/'
+r.model_dir = 'evaluation/model_folder/'
+fname = 'summary'
+r.system_filename_pattern = fname + '.(\d+).txt'
+r.model_filename_pattern = fname + '.#ID#.txt'
+testfile = 'data/finished/test.txt'
+with open('data/idx2word.json') as json_file:
+    index2word = json.load(json_file)
 
 
-def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
+def extractTestSum():
+    with open(testfile) as fileholder:
+        i = 1
+        line = fileholder.readline()
+        line = fileholder.readline()
+        while line:
+            outf = fname + '.' + str(i) + '.txt'
+            fmod = open(r.model_dir + outf, 'w+')
+            fmod.write(line)
+            fmod.close()
+            line = fileholder.readline()
+            line = fileholder.readline()
+            i += 1
+
+    fileholder.close()
+
+
+def evaluate(encoder, decoder, input_tensor, max_length=MAX_LENGTH):
     with torch.no_grad():
-        input_tensor = tensorFromSentence(input_lang, sentence)
         input_length = input_tensor.size()[0]
-        encoder_hidden = encoder.initHidden()
+        encoder_hidden = encoder.initHidden(device)
 
         encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
 
@@ -14,7 +51,7 @@ def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
                                                      encoder_hidden)
             encoder_outputs[ei] += encoder_output[0, 0]
 
-        decoder_input = torch.tensor([[SOS_token]], device=device)  # SOS
+        decoder_input = torch.tensor([[20000]], device=device)  # SOS
 
         decoder_hidden = encoder_hidden
 
@@ -26,27 +63,59 @@ def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
                 decoder_input, decoder_hidden, encoder_outputs)
             decoder_attentions[di] = decoder_attention.data
             topv, topi = decoder_output.data.topk(1)
-            if topi.item() == EOS_token:
-                decoded_words.append('<EOS>')
+            if topi.item() == SENTENCE_END:
+                decoded_words.append(SENTENCE_END)
                 break
             else:
-                decoded_words.append(output_lang.index2word[topi.item()])
+                decoded_words.append(index2word[str(topi.item())])
 
             decoder_input = topi.squeeze().detach()
 
         return decoded_words, decoder_attentions[:di + 1]
 
 
-def evaluateRandomly(encoder, decoder, n=10):
-    for i in range(n):
-        pair = random.choice(pairs)
-        print('>', pair[0])
-        print('=', pair[1])
-        output_words, attentions = evaluate(encoder, decoder, pair[0])
+def evaluateAll(encoder, decoder, checkpoint_dir, n_iters):
+    dataloader = get_dataloader(SummarizationDataset("data/finished/test.txt", "data/word2idx.json"))
+    load_model(encoder, model_dir=checkpoint_dir, appendix='Encoder', iter="l")
+    load_model(decoder, model_dir=checkpoint_dir, appendix='Decoder', iter="l")
+
+    data_iter = iter(dataloader)
+
+    for i in range(1, n_iters):
+        try:
+            batch = next(data_iter)
+        except:
+            data_iter = iter(dataloader)
+            batch = next(data_iter)
+
+        input_tensor = batch[0][0].to(device)
+
+        output_words, _ = evaluate(encoder, decoder, input_tensor)
         output_sentence = ' '.join(output_words)
-        print('<', output_sentence)
-        print('')
+        outf = fname + '.' + str(i) + '.txt'
+        fmod = open(r.system_dir + outf, 'w+')
+        fmod.write(output_sentence)
+        fmod.close()
 
 
 if __name__ == "__main__":
-    evaluateRandomly(encoder1, attn_decoder1)
+    if len(sys.argv) != 2:
+        print("USAGE: python train.py <checkpoint_dir>")
+        sys.exit()
+
+    checkpoint_dir = sys.argv[1]
+    weights = torch.load("data/GloVe_embeddings.pt")
+    device = torch.device('cpu')
+    encoder1 = EncoderRNN(weights, cfg.EMBEDDING_SIZE, cfg.HIDDEN_SIZE, 1, dropout_p=0).to(device)
+    attn_decoder1 = AttnDecoderRNN(weights, cfg.HIDDEN_SIZE, 200003, 1, dropout_p=0).to(device)
+    if not os.path.exists(checkpoint_dir):
+        os.makedirs(checkpoint_dir)
+    # extractTestSum() Only run once to extract reference summaries from test set
+    if not os.path.exists(r.model_dir):
+        os.makedirs(r.model_dir)
+        extractTestSum()
+    if not os.path.exists(r.system_dir):
+        os.makedirs(r.system_dir)
+    evaluateAll(encoder1, attn_decoder1, checkpoint_dir=checkpoint_dir, n_iters=11490)
+    output = r.convert_and_evaluate()
+    print(output)
