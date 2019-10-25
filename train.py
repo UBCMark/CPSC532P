@@ -10,7 +10,7 @@ import os, sys, time, math, random
 import pdb
 from utils.model_saver_iter import load_model, save_model
 
-MAX_LENGTH = 1000
+MAX_LENGTH = 500
 teacher_forcing_ratio = 0.5
 
 
