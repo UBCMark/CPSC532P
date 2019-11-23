@@ -34,7 +34,6 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
             # here just use the hidden states of 1st dimension,
             # should be justified later
             encoder_hiddens[ei] = encoder_hidden[0, 0]
-            pdb.set_trace()
         except:
             pdb.set_trace()
 
@@ -72,7 +71,7 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
     return loss.item() / target_length
 
 
-def trainIters(encoder, decoder, n_iters, checkpoint_dir, print_every=1000, plot_every=100, learning_rate=0.01,
+def trainIters(encoder, decoder, n_iters, checkpoint_dir, print_every=1000, plot_every=100, learning_rate=0.005,
                save_every=1000):
     start = time.time()
     plot_losses = []
