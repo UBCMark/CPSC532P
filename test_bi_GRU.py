@@ -49,12 +49,12 @@ def evaluate(encoder, decoder, input_tensor, max_length=MAX_LENGTH):
         input_length = input_tensor.size()[0]
         encoder_hidden = encoder.initHidden(device)
 
-        encoder_outputs = torch.zeros(max_length, 2*encoder.hidden_size, device=device)
+        encoder_hiddens = torch.zeros(max_length, 2*encoder.hidden_size, device=device)
 
         for ei in range(input_length):
             encoder_output, encoder_hidden = encoder(input_tensor[ei],
                                                      encoder_hidden)
-            encoder_outputs[ei] += encoder_output[0, 0]
+            encoder_hiddens[ei] += encoder_hidden[0, 0]
 
         decoder_input = torch.tensor([[20000]], device=device)  # SOS
 
@@ -66,7 +66,7 @@ def evaluate(encoder, decoder, input_tensor, max_length=MAX_LENGTH):
         di = 0
         while di < Decoder_MAX_LENGTH:
             decoder_output, decoder_hidden, decoder_attention = decoder(
-                decoder_input, decoder_hidden, encoder_outputs)
+                decoder_input, decoder_hidden, encoder_hiddens)
             decoder_attentions[di] = decoder_attention.data
             topv, topi = decoder_output.data.topk(3)
             topi = random.sample(topi.cpu().numpy().tolist()[0], 1)[0]
