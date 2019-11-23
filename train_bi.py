@@ -24,14 +24,16 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
     input_length = input_tensor.size(0)
     target_length = target_tensor.size(0)
 
-    encoder_outputs = torch.zeros(max_length, 2*encoder.hidden_size, device=device)
+    encoder_hiddens = torch.zeros(max_length, 2*encoder.hidden_size, device=device)
 
     loss = 0
     for ei in range(input_length):
         encoder_output, encoder_hidden = encoder(input_tensor[ei], encoder_hidden)
 
         try:
-            encoder_outputs[ei] = encoder_output[0, 0]
+            # here just use the hidden states of 1st dimension,
+            # should be justified later
+            encoder_hiddens[ei] = encoder_hidden[0, 0]
             pdb.set_trace()
         except:
             pdb.set_trace()
@@ -46,7 +48,7 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
         # Teacher forcing: Feed the target as the next input
         for di in range(target_length):
             decoder_output, decoder_hidden, decoder_attention = decoder(
-                decoder_input, decoder_hidden, encoder_outputs)
+                decoder_input, decoder_hidden, encoder_hiddens)
             loss += criterion(decoder_output, target_tensor[di].view(-1))
             decoder_input = target_tensor[di]  # Teacher forcing
 
@@ -54,7 +56,7 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
         # Without teacher forcing: use its own predictions as the next input
         for di in range(target_length):
             decoder_output, decoder_hidden, decoder_attention = decoder(
-                decoder_input, decoder_hidden, encoder_outputs)
+                decoder_input, decoder_hidden, encoder_hiddens)
             topv, topi = decoder_output.topk(1)
             decoder_input = topi.squeeze().detach()  # detach from history as input
 
