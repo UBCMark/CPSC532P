@@ -60,43 +60,47 @@ def beam_search(encoder, decoder, input_tensor, max_length=MAX_LENGTH, beam_widt
         decoded_words = []
         decoder_attentions = torch.zeros(max_length, max_length)
 
-        for di in range(Decoder_MAX_LENGTH):
-            decoder_output, decoder_hidden, decoder_attention = decoder(
-                decoder_input, decoder_hidden, encoder_hiddens)
-            decoder_attentions[di] = decoder_attention.data
 
-            tokens, beam, score = get_top_k(decoder_output)
+        decoder_output, decoder_hidden, decoder_attention = decoder(
+            decoder_input, decoder_hidden, encoder_hiddens)
+        decoder_attentions[di] = decoder_attention.data
 
-            while True:
+        tokens, beam, score = get_top_k(decoder_output)
+        decoder_hiddens = beam_width * [decoder_hidden]
 
-                if all([b[-1] == cfg.SENTENCE_END for b in beam]):
-                    break
+        while True:
 
-                candidates = []
+            if all([b[-1] == cfg.SENTENCE_END for b in beam]):
+                break
 
-                for i, token in enumerate(tokens):
+            candidates = []
 
-                    if beam[i][-1] == cfg.SENTENCE_END:
-                        candidates = append((token, beam[i], score[i], len(beam[i])))
+            for i, token in enumerate(tokens):
 
-                    decoder_output, decoder_hidden, decoder_attention = decoder(
-                    token, decoder_hidden, encoder_hiddens)
+                if beam[i][-1] == cfg.SENTENCE_END or len(beam[i]) >= Decoder_MAX_LENGTH:
+                    candidates = append((token, beam[i], score[i], len(beam[i]), None))
 
-                    cur_tokens, cur_beam, cur_score = get_top_k(decoder_output, k=5)
+                decoder_output, new_decoder_hidden, decoder_attention = decoder(
+                token, decoder_hiddens[i], encoder_hiddens)
 
-                    for j in range(len(cur_tokens)):
-                        candidates.append((cur_tokens[j],
-                                           beam[i] + cur_beam[j],
-                                           score[i] + cur_score[j],
-                                           len(beam[i]) + 1))
+                cur_tokens, cur_beam, cur_score = get_top_k(decoder_output, k=5)
 
-                candidates.sort(key=lambda candidate: (candidate[2] / candidate[3]))
+                for j in range(len(cur_tokens)):
+                    candidates.append((cur_tokens[j],
+                                       beam[i] + cur_beam[j],
+                                       score[i] + cur_score[j],
+                                       len(beam[i]) + 1,
+                                       new_decoder_hidden))
 
-                candidates = candidates[:5]
+            candidates.sort(key=lambda candidate: (candidate[2] / candidate[3]))
 
-                tokens = [candidate[0] for candidate in candidates]
-                beam = [candidate[1] for candidate in candidates]
-                score = [candidate[2] for candidate in candidates]
+            candidates = candidates[:5]
+
+            tokens = [candidate[0] for candidate in candidates]
+            beam = [candidate[1] for candidate in candidates]
+            score = [candidate[2] for candidate in candidates]
+            decoder_hiddens = [candidates[3] for candidate in candidates]
+
 
         return beam[0], decoder_attentions[:di + 1]
 
