@@ -81,6 +81,7 @@ class Attention(nn.Module):
             self.decode_proj = nn.Linear(cfg.HIDDEN_SIZE * 2, cfg.HIDDEN_SIZE * 2)
         else:
             self.decode_proj = nn.Linear(cfg.HIDDEN_SIZE, cfg.HIDDEN_SIZE * 2)
+            
         self.v = nn.Linear(cfg.HIDDEN_SIZE * 2, 1, bias=False)
 
         self.W_h = nn.Linear(cfg.HIDDEN_SIZE * 2, cfg.HIDDEN_SIZE * 2, bias=False)

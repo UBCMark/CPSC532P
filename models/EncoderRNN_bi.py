@@ -12,9 +12,9 @@ class EncoderRNN(nn.Module):
         self.n_layers = n_layers
         self.embedding = nn.Embedding.from_pretrained(weights)
         if cfg.LSTM:
-            self.lstm = nn.LSTM(emb_size, hidden_size, n_layers, bidirectional=True)
+            self.lstm = nn.LSTM(emb_size, hidden_size, n_layers, bidirectional=True, batch_first=True)
         else:
-            self.gru = nn.GRU(emb_size, hidden_size, n_layers, dropout=dropout_p, bidirectional=True)
+            self.gru = nn.GRU(emb_size, hidden_size, n_layers, dropout=dropout_p, bidirectional=True, batch_first=True)
 
     def forward(self, input, hidden):
         embedded = self.embedding(input).view(1, 1, -1)

@@ -35,7 +35,7 @@ def load_model(model, model_dir=None, appendix=None, iter='l'):
                         load_model = os.path.join(model_dir, file)
                 else:
                     continue
-
+                    
         print('load from iter: %d' % load_iter)
         model.load_state_dict(torch.load(load_model))
 
