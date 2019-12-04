@@ -16,7 +16,7 @@ class EncoderRNN(nn.Module):
         else:
             self.gru = nn.GRU(emb_size, hidden_size, n_layers, dropout=dropout_p, bidirectional=True, batch_first=True)
 
-    def forward(self, input, hidden):
+    def forward(self, input, hidden=None):
         embedded = self.embedding(input).view(1, 1, -1)
         if cfg.LSTM:
             output, hidden = self.lstm(embedded, hidden)
