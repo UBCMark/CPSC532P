@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import Dataset, DataLoader
 import json, os
-from . import cfg
+import cfg
 import pdb
 
 
@@ -80,7 +80,9 @@ class SummarizationDataset(Dataset):
         #     if word_idx != -1:
         #         input_emb[i] = self.emb[word_idx]
 
-        input_idx = torch.zeros(len(data), dtype=torch.long)
+        input_idx = torch.zeros(500, dtype=torch.long)
+        input_mask = torch.zeros(500)
+        input_mask[:len(data)] = 1
         for i, token in enumerate(data):
             try:
                 input_idx[i] = self.map[token]
@@ -88,9 +90,12 @@ class SummarizationDataset(Dataset):
             # Out of vocab
             except:
                 input_idx[i] = self.map[cfg.UNKNOWN]
+        
 
 
-        target_idx = torch.zeros(len(target), dtype=torch.long)
+        target_idx = torch.zeros(100, dtype=torch.long)
+        target_mask = torch.zeros(100)
+        target_mask[:len(target)] = 1
         for i, token in enumerate(target):
             try:
                 target_idx[i] = self.map[token]
@@ -99,7 +104,7 @@ class SummarizationDataset(Dataset):
             except:
                 target_idx[i] = self.map[cfg.UNKNOWN]
 
-        return input_idx, target_idx
+        return input_idx, input_mask, target_idx, target_mask
 
 
 def output2tokens(index, idx2word):
@@ -116,7 +121,8 @@ def output2tokens(index, idx2word):
     return tokens
 
 def get_dataloader(dataset):
-    dataloader = DataLoader(dataset, shuffle=True)
+    n_workers = os.cpu_count()
+    dataloader = DataLoader(dataset, batch_size=256, num_workers=n_workers, shuffle=True)
     return dataloader
 
 # For testing
@@ -135,5 +141,5 @@ if __name__ == "__main__":
 
     dataloader = get_dataloader(dataset)
 
-    # for i, (data, target) in enumerate(dataloader):
-    #     pdb.set_trace()
+    for i, (data, data_mask, target, target_mask) in enumerate(dataloader):
+        print(data.size(), data_mask.size())
