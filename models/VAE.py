@@ -1,8 +1,8 @@
-import torch as T
+import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from EncoderRNN_bi import EncoderRNN
+import pdb
 
 
 
@@ -18,25 +18,21 @@ class SimpleAttention(nn.Module):
 
 
     def forward(self, h_d, h_e):
+        b, seq_len, _ = list(h_e.size())
 
-        if not (h_d.size() == h_e.size()):
-            raise Exception("The size of hidden units for encoder and decoder must match!")
+        Wd_hd = self.W_d(h_d.repeat(1, seq_len, 1))         # B x T_e x hidden_size
+        We_he = self.W_e(h_e)                               # B x T_e x hidden_size
 
-        b, seq_len, _ = list(h_d.size())
+        e_t = self.v(torch.tanh(Wd_hd + We_he)).squeeze(-1) # B x T_e
+        a_t = torch.softmax(e_t, dim=-1)                    # B x T_e
+        c_t = torch.bmm(a_t.unsqueeze(1), h_e).squeeze(1)   # B x 2*hidden_size
 
-        Wd_hd = self.W_d(h_d).unsqueeze(2).repeat(1, 1, seq_len, 1)
-        We_he = self.W_e(h_e).unsqueeze(1).repeat(1, seq_len, 1, 1)
-
-        e = self.v(torch.tanh(Wd_hd + We_he)).squeeze(-1) # B x t_k x t_k
-        a = torch.softmax(e, dim=-1) # B x t_k x t_k
-        c = torch.bmm(a, h_e).squeeze(1) # B x t_k x 2*hidden_size
-
-        return c
+        return c_t
 
 
 
 class VAE(nn.Module):
-    def __init__(self, embed_w, embed_size, hidden_size, dropout_p=0.1):
+    def __init__(self, embed_w, embed_size, hidden_size, output_size, dropout_p=0.1):
         super(VAE, self).__init__()
         """
         As specified in the paper [https://arxiv.org/pdf/1708.00625.pdf],
@@ -46,16 +42,19 @@ class VAE(nn.Module):
 
         latent_size = hidden_size
 
+        self.hidden_size = hidden_size
+        self.latent_size = latent_size
+
         self.embedding = nn.Embedding.from_pretrained(embed_w)
-        self.dropout = nn.Dropout(self.dropout_p)
+        self.dropout = nn.Dropout(dropout_p)
 
         # Encoder
-        self.encoder = nn.GRU(emb_size, hidden_size, num_layers=1, bidirectional=True, batch_first=True)
+        self.encoder_rnn = nn.GRU(embed_size, hidden_size, num_layers=1, bidirectional=True, batch_first=True)
         self.attention = SimpleAttention(hidden_size)
 
         # Decoder (deterministic)
-        self.decoder_1 = nn.GRU(embed_size, hidden_size, num_layers=1, batch_first=True)
-        self.decoder_2 = nn.GRU(embed_size + 2 * hidden_size, hidden_size, num_layers=1, batch_first=True)
+        self.decoder_rnn1 = nn.GRU(embed_size, hidden_size, num_layers=1, batch_first=True)
+        self.decoder_rnn2 = nn.GRU(embed_size + 2 * hidden_size, hidden_size, num_layers=1, batch_first=True)
 
         # VAE Encoder
         self.W_yh_ez = nn.Linear(embed_size, hidden_size)
@@ -68,110 +67,75 @@ class VAE(nn.Module):
         # VAE Decoder
         self.W_zh_dy = nn.Linear(latent_size, hidden_size)
         self.W_hh_dy = nn.Linear(hidden_size, hidden_size)
-        self.W_hy = nn.Linear(hidden_size, emb_size)
-
-
-
-        self.n_z = opt.n_z
+        self.W_hy = nn.Linear(hidden_size, output_size)
 
     def encode(self, x):
-        x = self.embedding(x) # B x t_k x embedding_size
+        x = self.embedding(x)          # B x t_k x embedding_size
         x = self.dropout(x)
-
-        self.h_e, h_n = encoder(x) # B x t_k x 2*hidden_size
+        self.h_e, h_n = self.encoder_rnn(x) # B x t_k x 2*hidden_size
 
         self.encoded = True
 
 
-    def decode(self):
-
-        h_0 = torch.mean(self.h_e, 1).unsqueeze(0)
-
-        self.h_d1, _ = self.decoder_1(self.y, h_0) # B x t_k x hidden_size
-
-        self.c = self.attention(self.h_d_1, self.h_e) # B x t_k x 2*hidden_size
-
-        self.h_d_2, _ = self.decoder_2(torch.cat((self.c, self.y),
-                                                  dim=-1))  # B x t_k x hidden_size
-
-
-    def generate(self, t, z=None):
-
-        if z == None:
-            # Since latent z has same dimension as hidden state h_d
-            z = torch.zeros(self.h_d_2[:, 0].size())
-
-        self.h_t_ez = torch.sigmoid(
-            self.W_yh_ez(self.y[:, t]) + \
-            self.W_zh_ez(z) + \
-            self.W_hh_ez(self.h_d_1[:, t]))
-
-        mean_t = self.W_mu(h_t_ez)
-        sigma_t = torch.sqrt(torch.exp(self.W_logvar(h_t_ez)))
-
-        eps = torch.randn(mean_t.size())
-
-        z_t = mean_t + sigma * eps
-
-        h_dy = torch.tanh(
-            self.W_zh_dy(z_t) + \
-            self.W_hh_dy(h_d_2[:, t]))
-
-        y_t = torch.softmax(self.W_hy(h_dy), dim=-1)
-
-        return 
-
-
-
-
-
-    def forward(self, y, h_d1=None, h_d2, z=None):
+    def forward(self, y, h_d1=None, h_d2=None, z=None):
         """
-        Generate output for the VAE decoder for a single timestep
+        Generate output for the recurrent VAE decoder for a single timestep
         """
-
         if not self.encoded:
-            raise Exception("Need to first encode input sequence.")
+            raise Exception("Need to first encode input sequence!")
 
+        y = self.embedding(y).squeeze(1)                                                    # B x 1 x embed_size
 
+        # Initialized h_d_0 to be the average of all the encoder input states
+        if h_d1 is None or h_d2 is None:
+            h_d_0 = torch.add(
+                torch.mean(self.h_e[:, :, :self.hidden_size], 1),
+                torch.mean(self.h_e[:, :, self.hidden_size:], 1)) / 2.
+            h_d_0 = h_d_0.detach()                                                          # B x hidden_size
 
-        # y = self.embedding(x) # B x t_k x embedding_size
+            h_d1 = h_d_0 if h_d1 is None else h_d1
+            h_d2 = h_d_0 if h_d2 is None else h_d2
 
-        # h_e, _ = encoder(y) # B x t_k x 2*hidden_size
+        # Compute the deterministic hidden states of the decoder 
+        output, h_d1_t = self.decoder_rnn1(y.unsqueeze(1), h_d1.unsqueeze(1))               # B x 1 x hidden_size
 
-        # h_d_1, _ = self.decoder_1(y) # B x t_k x hidden_size
+        c_t = self.attention(h_d1_t, self.h_e)                                              # B x 2*hidden_size
 
-        # c = self.attention(h_d, h_e) # B x t_k x 2*hidden_size
+        output, h_d2_t = self.decoder_rnn2(torch.cat((y, c_t), dim=-1).unsqueeze(1),
+                                           h_d2.unsqueeze(1))                               
+
+        h_d1_t = h_d1_t.squeeze(1)                                                          # B x hidden_size
+        h_d2_t = h_d2_t.squeeze(1)                                                          # B x hidden_size
+
+        # Compute latent vector z at current time-step using VAE encoder
         
-        # h_d_2, _ = self.decoder_2(torch.cat((c, y), dim=-1))  # B x t_k x hidden_size
+        if z is None:
+            h_ez_t = torch.sigmoid(self.W_yh_ez(y) + self.W_hh_ez(h_d1))                    # B x hidden_size
 
-        self.encode(x)
-        self.decode()
-
-        # Generator
-
-
-
-
-
-
-
-
-
-
-        if z is None:	                                                #If we are testing with z sampled from random noise
-            batch_size, n_seq = x.size()
-            x = self.embedding(x)	                                    #Produce embeddings from encoder input
-            E_hidden = self.encoder(x)	                                #Get h_T of Encoder
-            mu = self.hidden_to_mu(E_hidden)	                        #Get mean of lantent z
-            logvar = self.hidden_to_logvar(E_hidden)	                #Get log variance of latent z
-            z = get_cuda(T.randn([batch_size, self.n_z]))	                #Noise sampled from ε ~ Normal(0,1)
-            z = mu + z*T.exp(0.5*logvar)	                            #Reparameterization trick: Sample z = μ + ε*σ for backpropogation
-            kld = -0.5*T.sum(logvar-mu.pow(2)-logvar.exp()+1, 1).mean()	#Compute KL divergence loss
+        # Use latent vector z for VAE hidden state if passed in from previous time-step
         else:
-            kld = None                                                  #If we are training with given text
+            h_ez_t = torch.sigmoid(self.W_yh_ez(y) + self.W_zh_ez(z) + self.W_hh_ez(h_d1))  # B x hidden_size
 
-        G_inp = self.embedding(G_inp)	                                #Produce embeddings for generator input
+        mu_t = self.W_mu(h_ez_t)                                                            # B x latent_size
+        logvar_t = self.W_logvar(h_ez_t)                                                    # B x latent_size
+        sigma_t = torch.sqrt(torch.exp(logvar_t))                                           # B x latent_size
+        eps = torch.randn(mu_t.size())                                                      # B x latent_size
 
-        logit, G_hidden = self.generator(G_inp, z, G_hidden)
-        return logit, G_hidden, kld
+        z_t = mu_t + sigma_t * eps.to(sigma_t.device)                                       # B x latent_size
+
+        # Compute output vector y from latent vector z using VAE decoder
+        h_dy_t = torch.tanh(self.W_zh_dy(z_t) + self.W_hh_dy(h_d2_t))                       # B x hidden_size
+        y_t = torch.softmax(self.W_hy(h_dy_t), -1)                                          # B x output_size
+
+
+        # Compute the KL-Divergence between q(z_t|y, z) and p(z)
+        KL = -0.5 * torch.sum(1 + logvar_t - logvar_t.exp() - mu_t.pow(2), 1)
+
+        return y_t, h_d1_t, h_d2_t, z_t, KL
+
+
+    def init_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_normal_(m.weight.data)
+                nn.init.zeros_(m.bias.data)
