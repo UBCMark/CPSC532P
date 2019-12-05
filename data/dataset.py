@@ -96,6 +96,7 @@ class SummarizationDataset(Dataset):
             # Out of vocab
             except:
                 input_idx[i] = self.map[cfg.UNKNOWN]
+        
 
         target_idx = torch.zeros(100, dtype=torch.long)
         target_mask = torch.zeros(100)
@@ -125,10 +126,9 @@ def output2tokens(index, idx2word):
     return tokens
 
 
-def get_dataloader(dataset, batch_size=8):
+def get_dataloader(dataset):
     n_workers = os.cpu_count()
-    dataloader = DataLoader(dataset, batch_size=batch_size, num_workers=n_workers, shuffle=True)
-
+    dataloader = DataLoader(dataset, batch_size=256, num_workers=n_workers, shuffle=True)
     return dataloader
 
 
