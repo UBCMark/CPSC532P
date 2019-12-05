@@ -44,7 +44,7 @@ class AttnDecoderRNN(nn.Module):
         self.gru = nn.GRU(self.hidden_size, self.hidden_size, num_layers=num_layers)
         self.out = nn.Linear(self.hidden_size, self.output_size)
 
-    def forward(self, input, hidden, encoder_hiddens):
+    def forward(self, input, hidden, encoder_outputs):
         embedded = self.embedding(input).view(1, 1, -1)
         embedded = self.dropout(embedded)
 
@@ -53,7 +53,7 @@ class AttnDecoderRNN(nn.Module):
             self.attn(torch.cat((embedded[0], hidden[0]), 1)), dim=1)
 
         attn_applied = torch.bmm(attn_weights.unsqueeze(0),
-                                 encoder_hiddens.unsqueeze(0))
+                                 encoder_outputs.unsqueeze(0))
 
         # c_t and y_t-1
         output = torch.cat((embedded[0], attn_applied[0]), 1)
@@ -85,10 +85,10 @@ class Attention(nn.Module):
 
         self.W_h = nn.Linear(cfg.HIDDEN_SIZE * 2, cfg.HIDDEN_SIZE * 2, bias=False)
 
-    def forward(self, decoder_hidden_hat, encoder_hiddens, coverage):
-        b, t_k, n = list(encoder_hiddens.size())
+    def forward(self, decoder_hidden_hat, encoder_outputs, coverage, input_mask):
+        b, t_k, n = list(encoder_outputs.size())
 
-        encoder_feature = encoder_hiddens.view(-1, 2 * cfg.HIDDEN_SIZE)  # B * t_k x 2*hidden_dim
+        encoder_feature = encoder_outputs.view(-1, 2 * cfg.HIDDEN_SIZE)  # B * t_k x 2*hidden_dim
         encoder_feature = self.W_h(encoder_feature)
 
         dec_fea = self.decode_proj(decoder_hidden_hat)  # B x 2*hidden_dim
@@ -103,14 +103,14 @@ class Attention(nn.Module):
 
         e = F.tanh(att_features)  # B * t_k x 2*hidden_dim
         scores = self.v(e)  # B * t_k x 1
-        scores = scores.view(-1, t_k)  # B x t_k
+        scores = scores.view(-1, t_k).masked_fill(input_mask==0, -1e10)  # B x t_k
 
-        attn_dist_ = F.softmax(scores, dim=1) # * enc_padding_mask  # B x t_k
+        attn_dist_ = F.softmax(scores, dim=1)  # B x t_k
         normalization_factor = attn_dist_.sum(1, keepdim=True)
         attn_dist = attn_dist_ / normalization_factor
 
         attn_dist = attn_dist.unsqueeze(1)  # B x 1 x t_k
-        c_t = torch.bmm(attn_dist, encoder_hiddens)  # B x 1 x n
+        c_t = torch.bmm(attn_dist, encoder_outputs)  # B x 1 x n
         c_t = c_t.view(-1, cfg.HIDDEN_SIZE * 2)  # B x 2*hidden_dim
 
         attn_dist = attn_dist.view(-1, t_k)  # B x t_k
@@ -163,17 +163,17 @@ class AttnDecoderRNN_full(nn.Module):
             if cfg.POINTER_GEN:
                 self.p_gen_linear = nn.Linear(cfg.HIDDEN_SIZE * 4 + cfg.EMBEDDING_SIZE, 1)  # was 4 if with c
         else:
-            self.rnn = nn.GRU(cfg.EMBEDDING_SIZE, cfg.HIDDEN_SIZE, num_layers=1)
+            self.rnn = nn.GRU(cfg.EMBEDDING_SIZE, cfg.HIDDEN_SIZE, num_layers=1, batch_first=True)
             if cfg.POINTER_GEN:
                 self.p_gen_linear = nn.Linear(cfg.HIDDEN_SIZE * 3 + cfg.EMBEDDING_SIZE, 1)  # was 4 if with c
 
         # p_vocab
         self.out1 = nn.Linear(cfg.HIDDEN_SIZE * 3, cfg.HIDDEN_SIZE)
         self.out2 = nn.Linear(cfg.HIDDEN_SIZE, cfg.VOCAB_SIZE+3)
-        # init_linear_wt(self.out2)
+        init_linear_wt(self.out2)
 
-    def forward(self, encoder_hiddens, decoder_input, decoder_hidden,
-                c_t_1, coverage, input_idx, step):
+    def forward(self, encoder_outputs, decoder_input, decoder_hidden,
+                c_t_1, coverage, input_idx, step, input_mask):
 
         if not self.training and step == 0:
             if cfg.LSTM:
@@ -183,12 +183,12 @@ class AttnDecoderRNN_full(nn.Module):
             else:
                 decoder_hidden_hat = decoder_hidden
 
-            c_t, _, coverage_next = self.attention_network(decoder_hidden_hat, encoder_hiddens, coverage)
+            c_t, _, coverage_next = self.attention_network(decoder_hidden_hat, encoder_outputs, coverage, input_mask)
 
             coverage = coverage_next
 
         embd = self.embedding(decoder_input)
-        x = self.x_context(torch.cat((c_t_1, embd.view(1,-1)), 1))
+        x = self.x_context(torch.cat((c_t_1, embd.view(c_t_1.shape[0], -1)), 1))
         decoder_output, decoder_hidden = self.rnn(x.unsqueeze(1), decoder_hidden)
 
         if cfg.LSTM:
@@ -199,7 +199,7 @@ class AttnDecoderRNN_full(nn.Module):
             h_decoder = decoder_hidden
             decoder_hidden_hat = h_decoder.view(-1, cfg.HIDDEN_SIZE)
 
-        c_t, attn_dist, coverage_next = self.attention_network(decoder_hidden_hat, encoder_hiddens, coverage)
+        c_t, attn_dist, coverage_next = self.attention_network(decoder_hidden_hat, encoder_outputs, coverage, input_mask)
 
         if self.training or step > 0:
             coverage = coverage_next
@@ -222,7 +222,7 @@ class AttnDecoderRNN_full(nn.Module):
             vocab_dist_ = p_gen * vocab_dist
             attn_dist_ = (1 - p_gen) * attn_dist
 
-            final_dist = vocab_dist_.scatter_add(1, input_idx.view(1,-1), attn_dist_)
+            final_dist = vocab_dist_.scatter_add(1, input_idx, attn_dist_)
             # final_dist = vocab_dist_ + attn_dist_
         else:
             final_dist = vocab_dist
