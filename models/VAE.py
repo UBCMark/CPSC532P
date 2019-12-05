@@ -17,13 +17,18 @@ class SimpleAttention(nn.Module):
         self.v = nn.Linear(hidden_size, 1, bias=True)
 
 
-    def forward(self, h_d, h_e):
-        b, seq_len, _ = list(h_e.size())
+    def forward(self, h_d, h_e, mask):
+
+        batch_size, seq_len, _ = list(h_e.size())
+        h_d = h_d.unsqueeze(1)
 
         Wd_hd = self.W_d(h_d.repeat(1, seq_len, 1))         # B x T_e x hidden_size
         We_he = self.W_e(h_e)                               # B x T_e x hidden_size
 
         e_t = self.v(torch.tanh(Wd_hd + We_he)).squeeze(-1) # B x T_e
+
+        # Pad non-token tensors to be -1e10 such that exp(-1e10) = 0
+        e_t = e_t.masked_fill(mask == 0, -1e10)
         a_t = torch.softmax(e_t, dim=-1)                    # B x T_e
         c_t = torch.bmm(a_t.unsqueeze(1), h_e).squeeze(1)   # B x 2*hidden_size
 
@@ -72,12 +77,11 @@ class VAE(nn.Module):
     def encode(self, x, mask):
         self.mask = mask
 
-        x = self.embedding(x)          # B x t_k x embedding_size
+        x = self.embedding(x)               # B x t_k x embedding_size
         x = self.dropout(x)
-        self.h_e, h_n = self.encoder_rnn(x) # B x t_k x 2*hidden_size
 
-        self.h_e * self.mask.unsqueeze(-1)
-        pdb.set_trace()
+        self.h_e, h_n = self.encoder_rnn(x) # B x t_k x 2*hidden_size
+        self.h_e = self.h_e.masked_fill(mask.unsqueeze(-1) == 0, 0)
 
         self.encoded = True
 
@@ -91,27 +95,28 @@ class VAE(nn.Module):
 
         y = self.embedding(y).squeeze(1)                                                    # B x 1 x embed_size
 
+        input_len = self.mask.sum(dim=1).unsqueeze(1)                                       # B x 1
+
         # Initialized h_d_0 to be the average of all the encoder input states
         if h_d1 is None or h_d2 is None:
-            pdb.set_trace()
             h_d_0 = torch.add(
-                torch.mean(self.h_e[:, :, :self.hidden_size], 1),
-                torch.mean(self.h_e[:, :, self.hidden_size:], 1)) / 2.
+                torch.sum(self.h_e[:, :, :self.hidden_size], 1) / input_len,
+                torch.sum(self.h_e[:, :, self.hidden_size:], 1) / input_len) / 2.
+
             h_d_0 = h_d_0.detach()                                                          # B x hidden_size
 
             h_d1 = h_d_0 if h_d1 is None else h_d1
             h_d2 = h_d_0 if h_d2 is None else h_d2
 
         # Compute the deterministic hidden states of the decoder 
-        output, h_d1_t = self.decoder_rnn1(y.unsqueeze(1), h_d1.unsqueeze(1))               # B x 1 x hidden_size
+        output, h_d1_t = self.decoder_rnn1(y.unsqueeze(1), h_d1.unsqueeze(0))               # 1 x B x hidden_size
+        h_d1_t = h_d1_t.squeeze(0)                                                          # B x hidden_size
 
-        c_t = self.attention(h_d1_t, self.h_e)                                              # B x 2*hidden_size
-
+        c_t = self.attention(h_d1_t, self.h_e, self.mask)                                   
         output, h_d2_t = self.decoder_rnn2(torch.cat((y, c_t), dim=-1).unsqueeze(1),
-                                           h_d2.unsqueeze(1))                               
+                                           h_d2.unsqueeze(0))                               
 
-        h_d1_t = h_d1_t.squeeze(1)                                                          # B x hidden_size
-        h_d2_t = h_d2_t.squeeze(1)                                                          # B x hidden_size
+        h_d2_t = h_d2_t.squeeze(0)                                                          # B x hidden_size
 
         # Compute latent vector z at current time-step using VAE encoder
         
@@ -131,7 +136,7 @@ class VAE(nn.Module):
 
         # Compute output vector y from latent vector z using VAE decoder
         h_dy_t = torch.tanh(self.W_zh_dy(z_t) + self.W_hh_dy(h_d2_t))                       # B x hidden_size
-        y_t = torch.softmax(self.W_hy(h_dy_t), -1)                                          # B x output_size
+        y_t = F.log_softmax(self.W_hy(h_dy_t), -1)                                          # B x output_size
 
 
         # Compute the KL-Divergence between q(z_t|y, z) and p(z)

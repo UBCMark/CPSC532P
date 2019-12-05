@@ -125,9 +125,9 @@ def output2tokens(index, idx2word):
 
     return tokens
 
-def get_dataloader(dataset):
+def get_dataloader(dataset, batch_size=256):
     n_workers = os.cpu_count()
-    dataloader = DataLoader(dataset, batch_size=256, num_workers=n_workers, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=batch_size, num_workers=n_workers, shuffle=True)
     return dataloader
 
 # For testing
