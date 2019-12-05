@@ -1,7 +1,12 @@
 import torch
 from torch.utils.data import Dataset, DataLoader
 import json, os
-from . import cfg
+
+if __name__ == "__main__":
+    import cfg
+else:
+    from . import cfg
+
 import pdb
 
 
@@ -123,6 +128,7 @@ def output2tokens(index, idx2word):
 def get_dataloader(dataset, batch_size=8):
     n_workers = os.cpu_count()
     dataloader = DataLoader(dataset, batch_size=batch_size, num_workers=n_workers, shuffle=True)
+
     return dataloader
 
 
@@ -142,4 +148,8 @@ if __name__ == "__main__":
     dataloader = get_dataloader(dataset)
 
     for i, (data, data_mask, target, target_mask) in enumerate(dataloader):
+        input_len = data_mask.sum(-1)
+        target_len = target_mask.sum(-1)
+
+        pdb.set_trace()
         print(data.size(), data_mask.size())
