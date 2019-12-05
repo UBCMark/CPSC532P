@@ -13,40 +13,43 @@ import numpy as np
 
 MAX_LENGTH = 500
 
-def trainVAE(model, checkpoint_dir, learning_rate=0.005, tf_ratio=0.5, print_every=1000):
+def trainVAE(model, dataloader, learning_rate=0.005, tf_ratio=0.5, print_every=1000):
     start = time.time()
 
     optimizer = optim.SGD(model.parameters(), lr=learning_rate)
-    dataloader = get_dataloader(SummarizationDataset("data/finished/train.txt", "data/word2idx.json"))
-
-    criterion = nn.NLLLoss(reduction='sum')
 
     batch_ll_loss, batch_kl_loss = 0., 0.
 
-    for iter, (batch_input, batch_target) in enumerate(dataloader):
-        batch_input = Variable(batch_input).to(device)
-        batch_target = Variable(batch_target).to(device)
+    for iter, (input_idx, input_mask, target_idx, target_mask) in enumerate(dataloader):
+        input_idx = Variable(input_idx).to(device)
+        target_idx = Variable(target_idx).to(device)
+        input_mask = input_mask.to(device)
+        
 
-        target_length = batch_target.size(1)
+        batch_size = input_idx.size(0)
+
+        input_len = input_mask.sum(dim=-1)
+        target_len = target_mask.sum(dim=-1)
 
         ll_loss, kl_loss = 0., 0
         optimizer.zero_grad()
 
-        model.encode(batch_input)
+        model.encode(input_idx, input_mask)
+        pdb.set_trace()
 
         # EOS token as the first input
         y0 = Variable(torch.LongTensor([[200001]])).to(device)
 
         y, h_d1, h_d2, z, kl = model(y0)
 
-        ll_loss += criterion(y, batch_target[:, 0])
+        ll_loss += F.nll_loss(y, target_idx[:, 0])
         kl_loss += kl
 
         for i in range(target_length):
 
             # Use ground-truth token as input
             if random.random() < tf_ratio:
-                y = batch_target[:, i].unsqueeze(1)
+                y = target_idx[:, i].unsqueeze(1)
 
             # Use predicted token as input
             else:
@@ -91,6 +94,8 @@ if __name__ == "__main__":
 
     if not os.path.exists(checkpoint_dir): os.makedirs(checkpoint_dir)
 
+    dataloader = get_dataloader(SummarizationDataset("data/finished/val.txt", "data/word2idx.json"))
+
     n_epochs = 105
 
     # Starts decaying teacher-forcing ratio at this epoch
@@ -100,7 +105,7 @@ if __name__ == "__main__":
 
         tf_ratio = 1 - max(0, epoch - tf_decay_start) / (n_epochs - tf_decay_start)
 
-        model, ll_loss, kl_loss = trainVAE(model, checkpoint_dir, tf_ratio=tf_ratio, print_every=1000)
+        model, ll_loss, kl_loss = trainVAE(model, dataloader, tf_ratio=tf_ratio, print_every=1000)
 
         with open('loss.txt', 'a') as f:
             f.write("[Epoch {}] Likelihood Loss: {.:6f}, KL Loss: {.:6f}\n".format(epoch, ll_loss, kl_loss))

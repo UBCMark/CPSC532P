@@ -69,10 +69,15 @@ class VAE(nn.Module):
         self.W_hh_dy = nn.Linear(hidden_size, hidden_size)
         self.W_hy = nn.Linear(hidden_size, output_size)
 
-    def encode(self, x):
+    def encode(self, x, mask):
+        self.mask = mask
+
         x = self.embedding(x)          # B x t_k x embedding_size
         x = self.dropout(x)
         self.h_e, h_n = self.encoder_rnn(x) # B x t_k x 2*hidden_size
+
+        self.h_e * self.mask.unsqueeze(-1)
+        pdb.set_trace()
 
         self.encoded = True
 
@@ -88,6 +93,7 @@ class VAE(nn.Module):
 
         # Initialized h_d_0 to be the average of all the encoder input states
         if h_d1 is None or h_d2 is None:
+            pdb.set_trace()
             h_d_0 = torch.add(
                 torch.mean(self.h_e[:, :, :self.hidden_size], 1),
                 torch.mean(self.h_e[:, :, self.hidden_size:], 1)) / 2.
@@ -129,7 +135,7 @@ class VAE(nn.Module):
 
 
         # Compute the KL-Divergence between q(z_t|y, z) and p(z)
-        KL = -0.5 * torch.sum(1 + logvar_t - logvar_t.exp() - mu_t.pow(2), 1)
+        KL = 0.5 * torch.sum(logvar_t.exp() + mu_t.pow(2) - logvar_t - 1, 1)
 
         return y_t, h_d1_t, h_d2_t, z_t, KL
 

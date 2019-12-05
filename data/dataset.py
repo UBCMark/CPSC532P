@@ -1,7 +1,12 @@
 import torch
 from torch.utils.data import Dataset, DataLoader
 import json, os
-import cfg
+
+if __name__ == "__main__":
+    import cfg
+else:
+    from . import cfg
+
 import pdb
 
 
@@ -142,4 +147,8 @@ if __name__ == "__main__":
     dataloader = get_dataloader(dataset)
 
     for i, (data, data_mask, target, target_mask) in enumerate(dataloader):
+        input_len = data_mask.sum(-1)
+        target_len = target_mask.sum(-1)
+
+        pdb.set_trace()
         print(data.size(), data_mask.size())
