@@ -1,11 +1,24 @@
 import torch
 import os, sys, random, pdb
 import argparse
+import json
 
 import models
 from data import *
 from utils import *
 from pyrouge import Rouge155
+from queue import PriorityQueue
+from models.AttnDecoderRNN_bi import AttnDecoderRNN, AttnDecoderRNN_full, Attention, ReduceState
+from models.EncoderRNN_bi import EncoderRNN_batch as EncoderRNN
+from train import MAX_LENGTH as MAX_LENGTH
+from data import cfg
+from data.dataset import get_dataloader
+from data.dataset import SummarizationDataset
+from utils.model_saver_iter import load_model, save_model
+from torch.autograd import Variable
+
+with open('data/idx2word.json') as json_file:
+    index2word = json.load(json_file)
 
 
 system_dir = 'evaluation/sys_folder/'
@@ -18,148 +31,112 @@ model_filename_pattern = fname + '.#ID#.txt'
 Decoder_MAX_LENGTH = 100
 r = Rouge155()
 
-def beam_search(encoder, decoder, input_tensor, max_length=MAX_LENGTH):
+
+def get_top_k(decoder_output, k=cfg.BEAM_WIDTH):
+
+    tokens = []
+    beam = [[]*k for _ in range(k)]
+    score = [0] * k
+
+    beam_width = k
+    topv, topi = torch.topk(decoder_output[0], beam_width)
+
+    for k in range(beam_width):
+        token = topi[k].squeeze().detach()
+        tokens.append(token)
+        word = index2word[str(topi[k].item())]
+        beam[k].append(word)
+        score[k] += abs(topv[k].item())
+
+    return tokens, beam, score
+
+
+def beam_search(encoder, decoder, input_tensor, max_length=MAX_LENGTH, beam_width=cfg.BEAM_WIDTH):
     with torch.no_grad():
         input_length = input_tensor.size()[0]
         encoder_hidden = encoder.initHidden(device)
 
-        encoder_hiddens = torch.zeros(max_length, encoder.hidden_size, device=device)
+        encoder_hiddens = torch.zeros(1, input_length, 2 * encoder.hidden_size, device=device)
 
         for ei in range(input_length):
             encoder_output, encoder_hidden = encoder(input_tensor[ei],
                                                      encoder_hidden)
-            encoder_hiddens[ei] += encoder_hidden[0, 0]
+            if cfg.LSTM:
+                encoder_hiddens[0, ei] = encoder_hidden[0].view(-1)  # [0] get h, drop c
+            else:
+                encoder_hiddens[0, ei] = encoder_hidden.view(-1)
 
         decoder_input = torch.tensor([[20000]], device=device)  # SOS
 
-        decoder_hidden = encoder_hidden
-
         decoded_words = []
-        decoder_attentions = torch.zeros(max_length, max_length)
+        # decoder_attentions = torch.zeros(max_length, max_length)
 
-        for di in range(Decoder_MAX_LENGTH):
-            decoder_output, decoder_hidden, decoder_attention = decoder(
-                decoder_input, decoder_hidden, encoder_hiddens)
+        input_idx = input_tensor
+        reduce_state = ReduceState().to(device)
+        decoder_hidden = reduce_state(encoder_hidden)
 
-            decoder_attentions[di] = decoder_attention.data
-            topv, topi = decoder_output.data.topk(1)
+        c_t_1 = Variable(torch.zeros((1, 2 * cfg.HIDDEN_SIZE))).to(device)
 
-            if index2word[str(topi.item())] == SENTENCE_END:
-                decoded_words.append(SENTENCE_END)
-                break
-            else:
-                decoded_words.append(index2word[str(topi.item())])
+        coverage = None
+        if cfg.IS_COVERAGE:
+            coverage = Variable(torch.zeros(input_length)).to(device)
 
-            decoder_input = topi.squeeze().detach()
+        final_dist, decoder_hidden,  c_t_1, attn_dist, p_gen, next_coverage = decoder(encoder_hiddens,
+                                                                                      decoder_input, decoder_hidden,
+                                                                                      c_t_1, coverage, input_idx, 0)
 
-        return decoded_words, decoder_attentions[:di + 1]
-
-def beam_decode(target_tensor, decoder_hiddens, encoder_outputs=None):
-    '''
-    :param target_tensor: target indexes tensor of shape [B, T] where B is the batch size and T is the maximum length of the output sentence
-    :param decoder_hidden: input tensor of shape [1, B, H] for start of the decoding
-    :param encoder_outputs: if you are using attention mechanism you can pass encoder outputs, [T, B, H] where T is the maximum length of input sentence
-    :return: decoded_batch
-    '''
-
-    beam_width = 5
-    topk = 1  # how many sentence do you want to generate
-    decoded_batch = []
-
-    input_length = input_tensor.size()[0]
-    encoder_hidden = encoder.initHidden(device)
-    encoder_hiddens = torch.zeros(max_length, encoder.hidden_size, device=device)
-
-    # decoding goes sentence by sentence
-    for idx in range(input_length):
-        if isinstance(decoder_hiddens, tuple):  # LSTM case
-            decoder_hidden = (decoder_hiddens[0][:,idx, :].unsqueeze(0),decoder_hiddens[1][:,idx, :].unsqueeze(0))
-        else:
-            decoder_hidden = decoder_hiddens[:, idx, :].unsqueeze(0)
-        encoder_output = encoder_outputs[:,idx, :].unsqueeze(1)
-
-        # Start with the start of the sentence token
-        decoder_input = torch.LongTensor([[SOS_token]], device=device)
-
-        # Number of sentence to generate
-        endnodes = []
-        number_required = min((topk + 1), topk - len(endnodes))
-
-        # starting node -  hidden vector, previous node, word id, logp, length
-        node = BeamSearchNode(decoder_hidden, None, decoder_input, 0, 1)
-        nodes = PriorityQueue()
-
-        # start the queue
-        nodes.put((-node.eval(), node))
-        qsize = 1
-
-        # start beam search
+        tokens, beam, score = get_top_k(final_dist)
+        decoder_hiddens = beam_width * [decoder_hidden]
         while True:
-            # give up when decoding takes too long
-            if qsize > 2000: break
 
-            # fetch the best node
-            score, n = nodes.get()
-            decoder_input = n.wordid
-            decoder_hidden = n.h
+            if any([b[-1] == cfg.SENTENCE_END for b in beam]):
+                break
 
-            if n.wordid.item() == EOS_token and n.prevNode != None:
-                endnodes.append((score, n))
-                # if we reached maximum # of sentences required
-                if len(endnodes) >= number_required:
-                    break
-                else:
+            candidates = []
+
+            for i, token in enumerate(tokens):
+                if beam[i][-1] == cfg.SENTENCE_END:
+                    candidates.append((token, beam[i], score[i], len(beam[i]), None))
+                    continue
+                if len(beam[i]) >= Decoder_MAX_LENGTH:
+                    candidates.append((token, beam[i] + [cfg.SENTENCE_END], score[i], len(beam[i]), None))
                     continue
 
-            # decode for one step using decoder
-            decoder_output, decoder_hidden = decoder(decoder_input, decoder_hidden, encoder_output)
+                final_dist, new_decoder_hidden, c_t_1, attn_dist, p_gen, next_coverage = decoder(encoder_hiddens,
+                                                                             token,
+                                                                             decoder_hiddens[i],
+                                                                             c_t_1, coverage,
+                                                                             input_idx, 1)
 
-            # PUT HERE REAL BEAM SEARCH OF TOP
-            log_prob, indexes = torch.topk(decoder_output, beam_width)
-            nextnodes = []
+                cur_tokens, cur_beam, cur_score = get_top_k(final_dist, k=cfg.BEAM_WIDTH)
 
-            for new_k in range(beam_width):
-                decoded_t = indexes[0][new_k].view(1, -1)
-                log_p = log_prob[0][new_k].item()
+                for j in range(len(cur_tokens)):
+                    candidates.append((cur_tokens[j],
+                                       beam[i] + cur_beam[j],
+                                       score[i] + cur_score[j],
+                                       len(beam[i]) + 1,
+                                       new_decoder_hidden))
 
-                node = BeamSearchNode(decoder_hidden, n, decoded_t, n.logp + log_p, n.leng + 1)
-                score = -node.eval()
-                nextnodes.append((score, node))
+            candidates.sort(key=lambda candidate: (candidate[2] / candidate[3]), reverse=True)
 
-            # put them into queue
-            for i in range(len(nextnodes)):
-                score, nn = nextnodes[i]
-                nodes.put((score, nn))
-                # increase qsize
-            qsize += len(nextnodes) - 1
+            candidates = candidates[:cfg.BEAM_WIDTH]
 
-        # choose nbest paths, back trace them
-        if len(endnodes) == 0:
-            endnodes = [nodes.get() for _ in range(topk)]
+            tokens = [candidate[0] for candidate in candidates]
+            beam = [candidate[1] for candidate in candidates]
+            score = [candidate[2] for candidate in candidates]
+            decoder_hiddens = [candidate[4] for candidate in candidates]
 
-        utterances = []
-        for score, n in sorted(endnodes, key=operator.itemgetter(0)):
-            utterance = []
-            utterance.append(n.wordid)
-            # back trace
-            while n.prevNode != None:
-                n = n.prevNode
-                utterance.append(n.wordid)
-
-            utterance = utterance[::-1]
-            utterances.append(utterance)
-
-        decoded_batch.append(utterances)
-
-    return decoded_batch
-
-
+        return beam[0] #, decoder_attentions[:di + 1]
 
 
 def evaluate(encoder, decoder, checkpoint_dir, n_iters):
-    dataloader = get_dataloader(SummarizationDataset("data/finished/test.txt", "data/word2idx.json"))
+    dataloader = get_dataloader(SummarizationDataset("data/finished/test.txt", "data/word2idx.json"), batch_size=1)
+
+
+    #encoder.load_state_dict(torch.load(os.path.join(checkpoint_dir, 'encoder_4.pth')))
+    #decoder.load_state_dict(torch.load(os.path.join(checkpoint_dir, 'decoder_4.pth')))
     load_model(encoder, model_dir=checkpoint_dir, appendix='Encoder', iter="l")
-    load_model(decoder, model_dir=checkpoint_dir, appendix='Decoder', iter="l")
+    load_model(decoder, model_dir=checkpoint_dir, appendix='Decoder_full', iter="l")
 
     data_iter = iter(dataloader)
 
@@ -167,12 +144,12 @@ def evaluate(encoder, decoder, checkpoint_dir, n_iters):
         try:
             batch = next(data_iter)
         except:
+            print("AAAA")
             data_iter = iter(dataloader)
             batch = next(data_iter)
 
         input_tensor = batch[0][0].to(device)
-
-        output_words, _ = evaluate(encoder, decoder, input_tensor)
+        output_words = beam_search(encoder, decoder, input_tensor)
         output_sentence = ' '.join(output_words)
         outf = fname + '.' + str(i) + '.txt'
         fmod = open(system_dir + outf, 'w+')
@@ -180,12 +157,27 @@ def evaluate(encoder, decoder, checkpoint_dir, n_iters):
         fmod.close()
 
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--cuda", help="Whether to evaluate model on GPU",
                         action="store_true", default=False)
+    if len(sys.argv) != 2:
+        print("USAGE: python train.py <checkpoint_dir>")
+        sys.exit()
 
+    checkpoint_dir = sys.argv[1]
+    weights = torch.load("data/GloVe_embeddings.pt")
+    device = torch.device('cuda:1')
+    bi_enable = True
+    if bi_enable:
+        encoder1 = EncoderRNN(weights, cfg.EMBEDDING_SIZE, cfg.HIDDEN_SIZE, 1).to(device)
+        if cfg.SIMPLE_ATTENTION:
+            attn_decoder1 = AttnDecoderRNN(weights, 2 * cfg.HIDDEN_SIZE, 200003, 1).to(device)
+        else:
+            attn_decoder1 = AttnDecoderRNN_full(weights).to(device)
+    else:
+        encoder1 = EncoderRNN(weights, cfg.EMBEDDING_SIZE, cfg.HIDDEN_SIZE, 2, dropout_p=0.1).to(device)
+        attn_decoder1 = AttnDecoderRNN(weights, cfg.HIDDEN_SIZE, 200003, 2).to(device)
 
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
@@ -195,5 +187,4 @@ if __name__ == "__main__":
     if not os.path.exists(system_dir):
         os.makedirs(system_dir)
 
-    evaluate(encoder, decoder, checkpoint_dir=checkpoint_dir, n_iters=11490)
-
+    evaluate(encoder1, attn_decoder1, checkpoint_dir=checkpoint_dir, n_iters=11490)
