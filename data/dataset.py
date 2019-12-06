@@ -96,7 +96,6 @@ class SummarizationDataset(Dataset):
             # Out of vocab
             except:
                 input_idx[i] = self.map[cfg.UNKNOWN]
-        
 
         target_idx = torch.zeros(100, dtype=torch.long)
         target_mask = torch.zeros(100)

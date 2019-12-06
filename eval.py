@@ -21,15 +21,33 @@ with open('data/idx2word.json') as json_file:
     index2word = json.load(json_file)
 
 
+Decoder_MAX_LENGTH = 100
 system_dir = 'evaluation/sys_folder/'
 model_dir = 'evaluation/model_folder/'
 fname = 'summary'
 system_filename_pattern = fname + '.(\d+).txt'
 model_filename_pattern = fname + '.#ID#.txt'
-
+testfile = 'data/finished/test.txt'
 
 Decoder_MAX_LENGTH = 100
 r = Rouge155()
+
+
+def extractTestSum():
+    with open(testfile) as fileholder:
+        i = 1
+        line = fileholder.readline()
+        line = fileholder.readline()
+        while line:
+            outf = fname + '.' + str(i) + '.txt'
+            fmod = open(model_dir + outf, 'w+')
+            fmod.write(line)
+            fmod.close()
+            line = fileholder.readline()
+            line = fileholder.readline()
+            i += 1
+
+    fileholder.close()
 
 
 def get_top_k(decoder_output, k=cfg.BEAM_WIDTH):
@@ -49,6 +67,7 @@ def get_top_k(decoder_output, k=cfg.BEAM_WIDTH):
         score[k] += abs(topv[k].item())
 
     return tokens, beam, score
+
 
 
 def beam_search(encoder, decoder, input_tensor, max_length=MAX_LENGTH, beam_width=cfg.BEAM_WIDTH):
@@ -161,6 +180,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--cuda", help="Whether to evaluate model on GPU",
                         action="store_true", default=False)
+
     if len(sys.argv) != 2:
         print("USAGE: python train.py <checkpoint_dir>")
         sys.exit()
@@ -188,3 +208,4 @@ if __name__ == "__main__":
         os.makedirs(system_dir)
 
     evaluate(encoder1, attn_decoder1, checkpoint_dir=checkpoint_dir, n_iters=11490)
+
