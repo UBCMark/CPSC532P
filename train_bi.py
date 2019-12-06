@@ -178,7 +178,7 @@ def trainIters(encoder, decoder, n_iters, checkpoint_dir, print_every=1000, plot
 
     encoder_optimizer = optim.SGD(encoder.parameters(), lr=learning_rate)
     decoder_optimizer = optim.SGD(decoder.parameters(), lr=learning_rate)
-    dataloader = get_dataloader(SummarizationDataset("data/finished/train.txt", "data/word2idx.json"), batch_size=20)
+    dataloader = get_dataloader(SummarizationDataset("data/finished/train.txt", "data/word2idx.json"), batch_size=16)
 
     criterion = nn.NLLLoss()
     start_iter = load_model(encoder, model_dir=checkpoint_dir, appendix='Encoder', iter="l")
