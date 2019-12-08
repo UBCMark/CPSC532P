@@ -14,6 +14,7 @@ from train import MAX_LENGTH
 from utils.model_saver_iter import load_model, save_model
 import pdb
 import random
+from test import extractTestSum
 
 Decoder_MAX_LENGTH = 100
 r = Rouge155()
@@ -25,23 +26,6 @@ model_filename_pattern = fname + '.#ID#.txt'
 testfile = 'data/finished/test.txt'
 with open('data/idx2word.json') as json_file:
     index2word = json.load(json_file)
-
-
-def extractTestSum():
-    with open(testfile) as fileholder:
-        i = 1
-        line = fileholder.readline()
-        line = fileholder.readline()
-        while line:
-            outf = fname + '.' + str(i) + '.txt'
-            fmod = open(model_dir + outf, 'w+')
-            fmod.write(line)
-            fmod.close()
-            line = fileholder.readline()
-            line = fileholder.readline()
-            i += 1
-
-    fileholder.close()
 
 
 def evaluate(encoder, decoder, input_tensor, max_length=MAX_LENGTH):

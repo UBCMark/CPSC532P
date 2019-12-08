@@ -26,20 +26,24 @@ with open('data/idx2word.json') as json_file:
 
 
 def extractTestSum():
-    with open(testfile) as fileholder:
-        i = 1
-        line = fileholder.readline()
-        line = fileholder.readline()
-        while line:
-            outf = fname + '.' + str(i) + '.txt'
-            fmod = open(model_dir + outf, 'w+')
-            fmod.write(line)
-            fmod.close()
-            line = fileholder.readline()
-            line = fileholder.readline()
-            i += 1
+    len_data = cfg.INPUT_MAX+1
+    len_target = cfg.OUTPUT_MAX+1
 
-    fileholder.close()
+    with open(testfile, 'r') as reader:
+        for i, line in enumerate(reader):
+            tokens = line.split()
+
+            if i % 2 == 0:
+                len_data = len(tokens)
+            elif i % 2 == 1:
+                len_target = len(tokens)
+                if len_data <= cfg.INPUT_MAX and len_target <= cfg.OUTPUT_MAX:
+                    outf = fname + '.' + str(i) + '.txt'
+                    fmod = open(model_dir + outf, 'w+')
+                    fmod.write(line)
+                    fmod.close()
+
+    reader.close()
 
 
 def evaluate(encoder, decoder, input_tensor, max_length=MAX_LENGTH):
